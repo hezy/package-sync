@@ -11,6 +11,7 @@ CONFIG_PATH = Path("~/.config/package-sync/config.json").expanduser()
 
 
 def load_config():
+    """Load the configuration file or create a new one if it doesn't exist."""
     CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
 
     if CONFIG_PATH.exists():
@@ -28,6 +29,7 @@ def load_config():
 
 
 def sets_to_lists(obj):
+    """Convert sets to lists in a nested dictionary."""
     if isinstance(obj, dict):
         return {key: sets_to_lists(value) for key, value in obj.items()}
     elif isinstance(obj, set):
@@ -36,12 +38,14 @@ def sets_to_lists(obj):
 
 
 def save_config(config):
+    """Save the configuration file."""
     config_copy = sets_to_lists(config)
     with open(CONFIG_PATH, "w") as f:
         json.dump(config_copy, f, indent=2, sort_keys=True)
 
 
 def get_pipx_packages():
+    """Get the list of installed pipx packages."""
     try:
         result = subprocess.run(
             ["pipx", "list", "--json"], capture_output=True, text=True
@@ -54,6 +58,7 @@ def get_pipx_packages():
 
 
 def get_brew_packages():
+    """Get the list of installed brew packages."""
     try:
         result = subprocess.run(
             ["brew", "list", "--formula"], capture_output=True, text=True
@@ -66,6 +71,7 @@ def get_brew_packages():
 
 
 def get_flatpak_packages():
+    """Get the list of installed flatpak packages."""
     try:
         result = subprocess.run(
             ["flatpak", "list", "--app", "--columns=application"],
@@ -81,6 +87,7 @@ def get_flatpak_packages():
 
 
 def install_package(pkg_type, package):
+    """Install a package of the specified type."""
     if pkg_type == "pipx":
         cmd = ["pipx", "install", package]
     elif pkg_type == "brew":
@@ -97,6 +104,7 @@ def install_package(pkg_type, package):
 
 
 def remove_package(pkg_type, package):
+    """Remove a package of the specified type."""
     if pkg_type == "pipx":
         cmd = ["pipx", "uninstall", package]
     elif pkg_type == "brew":
@@ -113,6 +121,7 @@ def remove_package(pkg_type, package):
 
 
 def get_all_packages():
+    """Get all installed packages."""
     return {
         "pipx": get_pipx_packages(),
         "brew": get_brew_packages(),
@@ -121,6 +130,7 @@ def get_all_packages():
 
 
 def print_package_state(machine_name, packages):
+    """Print the package state for a machine."""
     print(f"\nPackages for {machine_name}:")
     for pkg_type in sorted(["pipx", "brew", "flatpak"]):
         pkgs = packages.get(pkg_type, set())
@@ -129,6 +139,7 @@ def print_package_state(machine_name, packages):
 
 
 def sync_packages(machine_name, make_primary=False):
+    """Sync packages for a machine."""
     config = load_config()
     current_packages = get_all_packages()
 
@@ -195,6 +206,7 @@ def sync_packages(machine_name, make_primary=False):
 
 
 def main():
+    """Main function to parse arguments and sync packages."""
     parser = argparse.ArgumentParser(
         description="Sync packages across machines"
     )
