@@ -10,6 +10,48 @@ import shutil
 CONFIG_PATH = Path("~/.config/package-sync/config.json").expanduser()
 
 
+def check_internet_connection(hosts=None):
+    """
+    Check internet connectivity by pinging multiple reliable hosts.
+    
+    Args:
+        hosts: List of hosts to check. Defaults to well-known reliable servers
+        
+    Returns:
+        tuple: (is_connected, latency) where:
+            - is_connected is True if at least one host responds
+            - latency is the best response time in milliseconds, or None if all failed
+    """
+    if hosts is None:
+        hosts = [
+            "8.8.8.8",          # Google DNS
+            "1.1.1.1",          # Cloudflare DNS
+            "208.67.222.222",   # OpenDNS
+        ]
+    
+    best_latency = None
+    for host in hosts:
+        try:
+            result = subprocess.run(
+                ["ping", "-c", "1", "-W", "2", host],
+                capture_output=True,
+                text=True
+            )
+            if result.returncode == 0:
+                # Extract time from ping output
+                try:
+                    time_str = result.stdout.split("time=")[1].split()[0]
+                    latency = float(time_str)
+                    if best_latency is None or latency < best_latency:
+                        best_latency = latency
+                except (IndexError, ValueError):
+                    continue
+        except subprocess.SubprocessError:
+            continue
+    
+    return best_latency is not None, best_latency
+
+
 def load_config():
     """Load the configuration file or create a new one if it doesn't exist."""
     CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -120,8 +162,19 @@ def remove_package(pkg_type, package):
     return True
 
 
-def update_packages(pkg_type):
-    """Update all packages of the specified type."""
+def update_packages(pkg_type, timeout=60):
+    """
+    Update all packages of the specified type.
+    
+    Args:
+        pkg_type: The package manager to use ('pipx', 'brew', or 'flatpak')
+        timeout: Maximum time in seconds to wait for the update
+        
+    Returns:
+        tuple: (success, is_timeout) where:
+            - success is True if update completed successfully
+            - is_timeout is True if the operation timed out
+    """
     if pkg_type == "pipx":
         cmd = ["pipx", "upgrade-all"]
     elif pkg_type == "brew":
@@ -130,35 +183,113 @@ def update_packages(pkg_type):
         cmd = ["flatpak", "update", "-y"]
     else:
         print(f"Unknown package type: {pkg_type}")
-        return False
+        return False, False
 
     print(f"\nUpdating {pkg_type} packages...")
-    result = subprocess.run(cmd, capture_output=True, text=True)
-    
-    if result.returncode != 0:
-        print(f"Failed to update {pkg_type} packages: {result.stderr}")
-        return False
-    
-    if result.stdout.strip():
-        print(result.stdout)
-    return True
+    try:
+        result = subprocess.run(
+            cmd, 
+            capture_output=True, 
+            text=True,
+            timeout=timeout
+        )
+        
+        if result.returncode != 0:
+            print(f"Failed to update {pkg_type} packages: {result.stderr}")
+            if result.stdout.strip():
+                print(result.stdout)
+            return False, False
+        
+        if result.stdout.strip():
+            print(result.stdout)
+            
+        return True, False
+        
+    except subprocess.TimeoutExpired:
+        print(f"Timeout while updating {pkg_type} packages (>{timeout}s)")
+        return False, True
+    except Exception as e:
+        print(f"Unexpected error while updating {pkg_type} packages: {str(e)}")
+        return False, False
 
 
 def update_all_packages():
-    """Update all packages from all package managers."""
-    pkg_types = ["pipx", "brew", "flatpak"]
-    results = []
+    """
+    Update all packages from all package managers, with retry for timeouts.
+    First checks internet connectivity to avoid unnecessary waits.
     
+    Returns:
+        bool: True if all updates succeeded, False otherwise
+    """
+    # First check internet connectivity
+    print("Checking internet connectivity...")
+    is_connected, latency = check_internet_connection()
+    
+    if not is_connected:
+        print("\nERROR: No internet connectivity detected.")
+        print("Please check your internet connection and try again.")
+        return False
+        
+    print(f"Internet connection detected (latency: {latency:.1f}ms)")
+    
+    # Adjust timeouts based on latency
+    base_timeout = max(60, int(latency / 10))  # 60s minimum, or 100x ping time
+    retry_timeout = base_timeout * 3
+    
+    pkg_types = ["pipx", "brew", "flatpak"]
+    results = {}
+    timeout_failures = []
+    
+    # First pass - quick timeout
     for pkg_type in pkg_types:
-        # Only attempt to update if the package manager is installed
-        if any([
+        if not any([
             pkg_type == "pipx" and shutil.which("pipx"),
             pkg_type == "brew" and shutil.which("brew"),
             pkg_type == "flatpak" and shutil.which("flatpak")
         ]):
-            results.append(update_packages(pkg_type))
+            continue
+            
+        success, is_timeout = update_packages(pkg_type, timeout=base_timeout)
+        if is_timeout:
+            timeout_failures.append(pkg_type)
+        else:
+            results[pkg_type] = success
     
-    return all(results)
+    # If we had timeouts, check connectivity again before retrying
+    if timeout_failures:
+        print("\nChecking internet connection before retrying...")
+        is_connected, new_latency = check_internet_connection()
+        
+        if not is_connected:
+            print("\nWARNING: Internet connection lost during updates.")
+            print("Remaining updates cancelled.")
+            return False
+            
+        if new_latency > latency * 2:
+            print(f"\nWARNING: Network latency has increased significantly")
+            print(f"Original: {latency:.1f}ms, Current: {new_latency:.1f}ms")
+        
+        # Only retry if some updates succeeded or if latency is reasonable
+        if any(results.values()) or new_latency < 1000:  # 1 second threshold
+            print("\nRetrying timed out updates with extended timeout...")
+            for pkg_type in timeout_failures:
+                success, _ = update_packages(pkg_type, timeout=retry_timeout)
+                results[pkg_type] = success
+        else:
+            print("\nNetwork conditions too poor to retry updates.")
+            for pkg_type in timeout_failures:
+                results[pkg_type] = False
+    
+    # Analyze results
+    failed = [pkg for pkg, success in results.items() if not success]
+    
+    # Print summary
+    if failed:
+        print("\nUpdate summary:")
+        print(f"Failed updates: {', '.join(failed)}")
+        print("You may want to try updating these package managers manually")
+    
+    return len(failed) == 0
 
 
 def get_all_packages():
