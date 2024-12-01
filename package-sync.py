@@ -120,6 +120,47 @@ def remove_package(pkg_type, package):
     return True
 
 
+def update_packages(pkg_type):
+    """Update all packages of the specified type."""
+    if pkg_type == "pipx":
+        cmd = ["pipx", "upgrade-all"]
+    elif pkg_type == "brew":
+        cmd = ["brew", "upgrade"]
+    elif pkg_type == "flatpak":
+        cmd = ["flatpak", "update", "-y"]
+    else:
+        print(f"Unknown package type: {pkg_type}")
+        return False
+
+    print(f"\nUpdating {pkg_type} packages...")
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    
+    if result.returncode != 0:
+        print(f"Failed to update {pkg_type} packages: {result.stderr}")
+        return False
+    
+    if result.stdout.strip():
+        print(result.stdout)
+    return True
+
+
+def update_all_packages():
+    """Update all packages from all package managers."""
+    pkg_types = ["pipx", "brew", "flatpak"]
+    results = []
+    
+    for pkg_type in pkg_types:
+        # Only attempt to update if the package manager is installed
+        if any([
+            pkg_type == "pipx" and shutil.which("pipx"),
+            pkg_type == "brew" and shutil.which("brew"),
+            pkg_type == "flatpak" and shutil.which("flatpak")
+        ]):
+            results.append(update_packages(pkg_type))
+    
+    return all(results)
+
+
 def get_all_packages():
     """Get all installed packages."""
     return {
@@ -206,15 +247,23 @@ def sync_packages(machine_name, make_primary=False):
 
 
 def main():
-    """Main function to parse arguments and sync packages."""
+    """Main function to parse arguments and handle package operations."""
     parser = argparse.ArgumentParser(
-        description="Sync packages across machines"
+        description="Sync and update packages across machines"
     )
     parser.add_argument("machine_name", help="Name of this machine")
     parser.add_argument(
         "--primary", action="store_true", help="Set this machine as primary"
     )
+    parser.add_argument(
+        "--update", action="store_true", help="Update all installed packages"
+    )
     args = parser.parse_args()
+    
+    if args.update:
+        print("\nUpdating all packages...")
+        update_all_packages()
+    
     sync_packages(args.machine_name, args.primary)
 
 
