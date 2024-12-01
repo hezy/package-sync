@@ -4,11 +4,16 @@ Package Sync is a Python script that helps you synchronize packages across multi
 
 ## Features
 
-- Designate one machine as the primary machine, and sync packages on other machines to match the primary machine's state.
-- Automatically install missing packages and remove extra packages on non-primary machines.
-- Update all installed packages across all package managers with a single command.
-- Keep track of the last update time for each machine.
-- Handle corrupted config files by creating a backup and starting fresh.
+- Designate one machine as the primary machine, and sync packages on other machines to match the primary machine's state
+- Automatically install missing packages and remove extra packages on non-primary machines
+- Smart package updates with automatic retry mechanism:
+  - Checks internet connectivity before attempting updates
+  - Adjusts timeout values based on network latency
+  - Automatically retries failed updates with extended timeouts
+  - Provides detailed progress and error reporting
+- Keep track of the last update time for each machine
+- Handle corrupted config files by creating a backup and starting fresh
+- Comprehensive error handling and status reporting
 
 ## Prerequisites
 
@@ -43,16 +48,29 @@ Run the script with the following command:
 The script will perform the following actions:
 
 1. If the `--update` flag is provided:
+   - Check internet connectivity and measure network latency
+   - Attempt to update packages with timeout values adjusted to network conditions
    - Update all `pipx` packages using `pipx upgrade-all`
    - Update all `brew` packages using `brew upgrade`
    - Update all `flatpak` packages using `flatpak update`
-2. Load or create the configuration file (`~/.config/package-sync/config.json`).
-3. Retrieve the list of installed packages for `pipx`, `brew`, and `flatpak` on the current machine.
-4. If the current machine is the primary machine or no primary machine is set, update the configuration file with the current machine's package state.
+   - Automatically retry failed updates with extended timeouts if network conditions permit
+2. Load or create the configuration file (`~/.config/package-sync/config.json`)
+3. Retrieve the list of installed packages for `pipx`, `brew`, and `flatpak` on the current machine
+4. If the current machine is the primary machine or no primary machine is set, update the configuration file with the current machine's package state
 5. If the current machine is not the primary machine, sync its packages with the primary machine:
-   - Install missing packages that are present on the primary machine but not on the current machine.
-   - Remove extra packages that are present on the current machine but not on the primary machine.
-6. Update the configuration file with the current machine's updated package state.
+   - Install missing packages that are present on the primary machine but not on the current machine
+   - Remove extra packages that are present on the current machine but not on the primary machine
+6. Update the configuration file with the current machine's updated package state
+
+## Error Handling
+
+The script includes comprehensive error handling for various scenarios:
+
+- Network connectivity issues are detected and reported
+- Package manager failures are captured and reported
+- Timeouts are handled gracefully with automatic retry mechanisms
+- Configuration file corruption is handled by creating backups
+- Detailed error messages are provided for troubleshooting
 
 ## Configuration File
 
@@ -75,14 +93,14 @@ The configuration file (`~/.config/package-sync/config.json`) stores the package
 }
 ```
 
-- `primary_machine`: The name of the designated primary machine.
-- `machines`: An object containing the package state for each machine.
-  - `<machine_name>`: The name of the machine.
-    - `packages`: An object containing the list of installed packages for each package manager.
-    - `last_update`: The timestamp of the last update for the machine.
+- `primary_machine`: The name of the designated primary machine
+- `machines`: An object containing the package state for each machine
+  - `<machine_name>`: The name of the machine
+    - `packages`: An object containing the list of installed packages for each package manager
+    - `last_update`: The timestamp of the last update for the machine
 
 If the configuration file becomes corrupted, the script will automatically create a backup of the corrupted file and start fresh with a new configuration file.
 
 ## License
 
-This script is released under the [MIT License](LICENSE).
+This script is released under the [MIT License](LICENSE)
