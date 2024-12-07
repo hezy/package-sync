@@ -170,12 +170,12 @@ def install_package(pkg_type, package):
     Returns:
         bool: True if installation succeeded, False if it failed
     """
-    if pkg_type == "pipx":
-        cmd = ["pipx", "install", package]
-    elif pkg_type == "brew":
-        cmd = ["brew", "install", package]
+    if pkg_type == "brew":
+        cmd = ["brew", "install", "--ignore-dependencies", package]
     elif pkg_type == "flatpak":
         cmd = ["flatpak", "install", "-y", package]
+    elif pkg_type == "pipx":
+        cmd = ["pipx", "install", package]
 
     print(f"Installing {pkg_type} package: {package}")
     result = subprocess.run(cmd, capture_output=True, text=True)
@@ -199,12 +199,12 @@ def remove_package(pkg_type, package):
     Returns:
         bool: True if removal succeeded, False if it failed
     """
-    if pkg_type == "pipx":
-        cmd = ["pipx", "uninstall", package]
-    elif pkg_type == "brew":
-        cmd = ["brew", "uninstall", package]
+    if pkg_type == "brew":
+        cmd = ["brew", "uninstall", "--ignore-dependencies", package]
     elif pkg_type == "flatpak":
         cmd = ["flatpak", "uninstall", "-y", package]
+    elif pkg_type == "pipx":
+        cmd = ["pipx", "uninstall", package]
 
     print(f"Removing {pkg_type} package: {package}")
     result = subprocess.run(cmd, capture_output=True, text=True)
@@ -227,12 +227,12 @@ def update_packages(pkg_type, timeout=60):
             - success is True if update completed successfully
             - is_timeout is True if the operation timed out
     """
-    if pkg_type == "pipx":
-        cmd = ["pipx", "upgrade-all"]
-    elif pkg_type == "brew":
-        cmd = ["brew", "upgrade"]
+    if pkg_type == "brew":
+        cmd = ["brew", "upgrade", "--ignore-depenecies"]
     elif pkg_type == "flatpak":
         cmd = ["flatpak", "update", "-y"]
+    elif pkg_type == "pipx":
+        cmd = ["pipx", "upgrade-all"]
     else:
         print(f"Unknown package type: {pkg_type}")
         return False, False
@@ -273,9 +273,9 @@ def update_all_packages():
         dict: A dictionary with package manager names as keys and sets of installed
               packages as values. Format:
               {
-                  'pipx': {pkg1, pkg2, ...},
                   'brew': {pkg1, pkg2, ...},
-                  'flatpak': {pkg1, pkg2, ...}
+                  'flatpak': {pkg1, pkg2, ...},
+                  'pipx': {pkg1, pkg2, ...}
               }
     """
     # First check internet connectivity
@@ -293,7 +293,7 @@ def update_all_packages():
     base_timeout = max(60, int(latency / 10))  # 60s minimum, or 100x ping time
     retry_timeout = base_timeout * 3
 
-    pkg_types = ["pipx", "brew", "flatpak"]
+    pkg_types = ["brew", "flatpak", "pipx"]
     results = {}
     timeout_failures = []
 
@@ -301,9 +301,9 @@ def update_all_packages():
     for pkg_type in pkg_types:
         if not any(
             [
-                pkg_type == "pipx" and shutil.which("pipx"),
                 pkg_type == "brew" and shutil.which("brew"),
                 pkg_type == "flatpak" and shutil.which("flatpak"),
+                pkg_type == "pipx" and shutil.which("pipx"),
             ]
         ):
             continue
@@ -354,9 +354,9 @@ def update_all_packages():
 def get_all_packages():
     """Get all installed packages."""
     return {
-        "pipx": get_pipx_packages(),
         "brew": get_brew_packages(),
         "flatpak": get_flatpak_packages(),
+        "pipx": get_pipx_packages(),
     }
 
 
@@ -372,7 +372,7 @@ def print_package_state(machine_name, packages):
         packages: Dictionary of package sets by package manager type
     """
     print(f"\nPackages for {machine_name}:")
-    for pkg_type in sorted(["pipx", "brew", "flatpak"]):
+    for pkg_type in sorted(["brew", "flatpak", "pipx"]):
         pkgs = packages.get(pkg_type, set())
         if pkgs:
             print(f"{pkg_type:8} ({len(pkgs):2}): {', '.join(sorted(pkgs))}")
@@ -386,18 +386,18 @@ def install_package(pkg_type, package):
     Prints status messages and captures any error output.
     
     Args:
-        pkg_type: String indicating package manager ('pipx', 'brew', or 'flatpak')
+        pkg_type: String indicating package manager ('brew', 'flatpak' or 'pipx')
         package: String name/ID of the package to install
         
     Returns:
         bool: True if installation succeeded, False if it failed
     """ """Install a package of the specified type."""
-    if pkg_type == "pipx":
-        cmd = ["pipx", "install", package]
-    elif pkg_type == "brew":
-        cmd = ["brew", "install", package]
+    if pkg_type == "brew":
+        cmd = ["brew", "install", "--ignore-dependencies", package]
     elif pkg_type == "flatpak":
         cmd = ["flatpak", "install", "-y", package]
+    elif pkg_type == "pipx":
+        cmd = ["pipx", "install", package]
 
     print(f"Installing {pkg_type} package: {package}")
     result = subprocess.run(cmd, capture_output=True, text=True)
@@ -421,12 +421,12 @@ def remove_package(pkg_type, package):
     Returns:
         bool: True if removal succeeded, False if it failed
     """ """Remove a package of the specified type."""
-    if pkg_type == "pipx":
-        cmd = ["pipx", "uninstall", package]
-    elif pkg_type == "brew":
-        cmd = ["brew", "uninstall", package]
+    if pkg_type == "brew":
+        cmd = ["brew", "uninstall", "--ignore-dependencies", package]
     elif pkg_type == "flatpak":
         cmd = ["flatpak", "uninstall", "-y", package]
+    elif pkg_type == "pipx":
+        cmd = ["pipx", "uninstall", package]
 
     print(f"Removing {pkg_type} package: {package}")
     result = subprocess.run(cmd, capture_output=True, text=True)
@@ -449,12 +449,12 @@ def update_packages(pkg_type, timeout=60):
             - success is True if update completed successfully
             - is_timeout is True if the operation timed out
     """
-    if pkg_type == "pipx":
-        cmd = ["pipx", "upgrade-all"]
-    elif pkg_type == "brew":
+    if pkg_type == "brew":
         cmd = ["brew", "upgrade"]
     elif pkg_type == "flatpak":
         cmd = ["flatpak", "update", "-y"]
+    elif pkg_type == "pipx":
+        cmd = ["pipx", "upgrade-all"]
     else:
         print(f"Unknown package type: {pkg_type}")
         return False, False
@@ -495,9 +495,9 @@ def update_all_packages():
         dict: A dictionary with package manager names as keys and sets of installed
               packages as values. Format:
               {
-                  'pipx': {pkg1, pkg2, ...},
                   'brew': {pkg1, pkg2, ...},
-                  'flatpak': {pkg1, pkg2, ...}
+                  'flatpak': {pkg1, pkg2, ...},
+                  'pipx': {pkg1, pkg2, ...}
               }
     """
     # First check internet connectivity
@@ -515,7 +515,7 @@ def update_all_packages():
     base_timeout = max(60, int(latency / 10))  # 60s minimum, or 100x ping time
     retry_timeout = base_timeout * 3
 
-    pkg_types = ["pipx", "brew", "flatpak"]
+    pkg_types = ["brew", "flatpak", "pipx"]
     results = {}
     timeout_failures = []
 
@@ -523,9 +523,9 @@ def update_all_packages():
     for pkg_type in pkg_types:
         if not any(
             [
-                pkg_type == "pipx" and shutil.which("pipx"),
                 pkg_type == "brew" and shutil.which("brew"),
                 pkg_type == "flatpak" and shutil.which("flatpak"),
+                pkg_type == "pipx" and shutil.which("pipx"),
             ]
         ):
             continue
@@ -576,9 +576,9 @@ def update_all_packages():
 def get_all_packages():
     """Get all installed packages."""
     return {
-        "pipx": get_pipx_packages(),
         "brew": get_brew_packages(),
         "flatpak": get_flatpak_packages(),
+        "pipx": get_pipx_packages(),
     }
 
 
