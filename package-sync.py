@@ -171,7 +171,7 @@ def install_package(pkg_type, package):
         bool: True if installation succeeded, False if it failed
     """
     if pkg_type == "brew":
-        cmd = ["brew", "install", "--ignore-dependencies", package]
+        cmd = ["brew", "install", package]
     elif pkg_type == "flatpak":
         cmd = ["flatpak", "install", "-y", package]
     elif pkg_type == "pipx":
@@ -200,7 +200,7 @@ def remove_package(pkg_type, package):
         bool: True if removal succeeded, False if it failed
     """
     if pkg_type == "brew":
-        cmd = ["brew", "uninstall", "--ignore-dependencies", package]
+        cmd = ["brew", "uninstall", package]
     elif pkg_type == "flatpak":
         cmd = ["flatpak", "uninstall", "-y", package]
     elif pkg_type == "pipx":
@@ -393,7 +393,7 @@ def install_package(pkg_type, package):
         bool: True if installation succeeded, False if it failed
     """ """Install a package of the specified type."""
     if pkg_type == "brew":
-        cmd = ["brew", "install", "--ignore-dependencies", package]
+        cmd = ["brew", "install", package]
     elif pkg_type == "flatpak":
         cmd = ["flatpak", "install", "-y", package]
     elif pkg_type == "pipx":
@@ -422,7 +422,7 @@ def remove_package(pkg_type, package):
         bool: True if removal succeeded, False if it failed
     """ """Remove a package of the specified type."""
     if pkg_type == "brew":
-        cmd = ["brew", "uninstall", "--ignore-dependencies", package]
+        cmd = ["brew", "uninstall", package]
     elif pkg_type == "flatpak":
         cmd = ["flatpak", "uninstall", "-y", package]
     elif pkg_type == "pipx":
