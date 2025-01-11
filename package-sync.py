@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 import json
 import subprocess
 import os
@@ -6,21 +5,40 @@ from pathlib import Path
 from datetime import datetime
 import argparse
 import shutil
+from typing import TypeAlias, Dict, List, Set, Any, Optional, Tuple
 
-CONFIG_PATH = Path("~/.config/package-sync/config.json").expanduser()
+
+# Type aliases for better clarity
+MachineConfig: TypeAlias = Dict[str, Dict[str, Any]]
+LastChanges: TypeAlias = Dict[str, Any]
+ConfigDict: TypeAlias = Dict[str, Optional[str] | MachineConfig | LastChanges]
 
 
-def check_internet_connection(hosts=None):
-    """
-    Check internet connectivity by pinging multiple reliable hosts.
+CONFIG_PATH = Path("~/.config/package-sync/config.jsonfig.json").expanduser()
+
+
+def check_internet_connection(
+    hosts: list[str] | None = None
+) -> tuple[bool, float | None]:
+    r"""Check internet connectivity by pinging multiple reliable hosts.
+    
+    If no hosts are provided, checks connectivity using well-known DNS servers
+    (Google DNS, Cloudflare DNS, and OpenDNS). Each host is pinged with a 2-second
+    timeout. Returns both connection status and best observed latency.
 
     Args:
-        hosts: List of hosts to check. Defaults to well-known reliable servers
+        hosts: List of host IP addresses to ping. If None, uses default DNS servers.
 
     Returns:
-        tuple: (is_connected, latency) where:
-            - is_connected is True if at least one host responds
-            - latency is the best response time in milliseconds, or None if all failed
+        A tuple containing:
+            - A boolean indicating if any host responded successfully
+            - The best response time in milliseconds, or None if all pings failed
+        
+    Example:
+        >>> is_connected, latency = check_internet_connection()
+        >>> print(f"Connected: {is_connected}, Latency: {latency}ms")
+        Connected: True, Latency: 24.5ms
+
     """
     if hosts is None:
         hosts = [
@@ -29,7 +47,7 @@ def check_internet_connection(hosts=None):
             "208.67.222.222",  # OpenDNS
         ]
 
-    best_latency = None
+    best_latency: float | None = None
     for host in hosts:
         try:
             result = subprocess.run(
@@ -52,8 +70,18 @@ def check_internet_connection(hosts=None):
     return best_latency is not None, best_latency
 
 
-def load_config():
-    """Load the configuration file or create a new one if it doesn't exist."""
+def load_config() -> Dict[str, Any]:
+    r"""Load the configuration file or create a new one if it doesn't exist.
+
+    Returns:
+        Dict[str, Any]: A configuration dictionary with the structure:
+            {
+                "primary_machine": Optional[str],
+                "machines": Dict[str, Dict[str, Any]],
+                "last_changes": Dict[str, Any]
+            }
+
+    """
     CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
 
     if CONFIG_PATH.exists():
@@ -65,13 +93,43 @@ def load_config():
             print(f"Config file corrupted. Backing up to {backup_path}")
             shutil.copy(CONFIG_PATH, backup_path)
 
-    config = {"primary_machine": None, "machines": {}, "last_changes": {}}
+    config: Dict[str, Any] = {
+        "primary_machine": None,
+        "machines": {},
+        "last_changes": {}
+    }
     save_config(config)
     return config
 
 
-def sets_to_lists(obj):
-    """Convert sets to lists in a nested dictionary."""
+def sets_to_lists(obj: Dict | Set | Any) -> Dict | List | Any:
+    r"""Convert all Set objects to sorted Lists within a nested dictionary structure.
+
+    This function recursively traverses a nested dictionary and converts any Set objects 
+    it encounters into sorted Lists. Other types are left unchanged. This is useful for 
+    preparing nested data structures for JSON serialization, since JSON does not support
+    Set types.
+
+    Args:
+        obj: The object to process. Can be:
+            - A Dict with arbitrary nesting of Dicts and Sets
+            - A Set of hashable elements
+            - Any other type (which will be returned unchanged)
+
+    Returns:
+        The input object with all Sets converted to sorted Lists:
+            - Dicts are processed recursively
+            - Sets are converted to sorted Lists
+            - All other types are returned as-is
+
+    Examples:
+        >>> sets_to_lists({'a': {1, 2}, 'b': {'c': {3, 1}, 'd': 5}})
+        {'a': [1, 2], 'b': {'c': [1, 3], 'd': 5}}
+        >>> sets_to_lists({1, 3, 2})
+        [1, 2, 3]
+        >>> sets_to_lists(42)
+        42
+    """
     if isinstance(obj, dict):
         return {key: sets_to_lists(value) for key, value in obj.items()}
     elif isinstance(obj, set):
@@ -79,86 +137,169 @@ def sets_to_lists(obj):
     return obj
 
 
-def save_config(config):
-    """Save the configuration file."""
+def save_config(config: ConfigDict) -> None:
+    r"""Save the configuration to the JSON file specified by CONFIG_PATH.
+
+    Converts all sets in the config dictionary to sorted lists before saving,
+    as JSON doesn't support set serialization. The configuration structure is:
+    {
+        "primary_machine": Optional[str],
+        "machines": {
+            "machine_name": {
+                "packages": {
+                    "brew": set[str],
+                    "flatpak": set[str],
+                    "pipx": set[str]
+                },
+                "last_update": str  # ISO format datetime
+            },
+            ...
+        },
+        "last_changes": Dict[str, Any]
+    }
+
+    Args:
+        config: Configuration dictionary containing machine package states
+               and sync information. Sets will be converted to sorted lists
+               before saving.
+
+    Side Effects:
+        - Creates CONFIG_PATH parent directories if they don't exist
+        - Writes the configuration to CONFIG_PATH in JSON format
+        - Overwrites existing configuration file if it exists
+
+    Raises:
+        OSError: If there are filesystem permission issues or other IO errors
+        TypeError: If the config contains types that can't be JSON serialized
+    """
     config_copy = sets_to_lists(config)
     with open(CONFIG_PATH, "w") as f:
         json.dump(config_copy, f, indent=2, sort_keys=True)
 
 
-def get_pipx_packages():
-    """
-    Get the list of installed pipx packages.
+def get_pipx_packages() -> set[str]:
+    r"""Get the list of installed pipx packages.
 
-    Uses the pipx list command with JSON output to retrieve all installed packages.
-    Handles cases where pipx is not installed or fails to execute.
+    Executes 'pipx list --json' to retrieve all installed packages in JSON format.
+    Parses the JSON output to extract package names from the virtual environments.
+    Handles error cases gracefully by returning an empty set.
+
+    Note:
+        This function assumes pipx's JSON output structure contains a 'venvs' key
+        mapping to a dictionary of virtual environments.
 
     Returns:
-        set: A set of package names installed via pipx. Returns empty set if pipx
-             is not installed or fails.
+        set[str]: A set of package names installed via pipx. Returns an empty set if:
+            - pipx is not installed
+            - pipx command fails to execute
+            - JSON output cannot be parsed
+            - 'venvs' key is missing from output
+
+    Example:
+        >>> packages = get_pipx_packages()
+        >>> print(packages)
+        {'black', 'mypy', 'ruff'}
     """
     try:
         result = subprocess.run(
-            ["pipx", "list", "--json"], capture_output=True, text=True
+            ["pipx", "list", "--json"], 
+            capture_output=True, 
+            text=True,
+            check=False  # Don't raise CalledProcessError on non-zero return codes
         )
         if result.returncode != 0:
             return set()
         return set(json.loads(result.stdout)["venvs"].keys())
-    except FileNotFoundError:
+    except (FileNotFoundError, json.JSONDecodeError, KeyError):
         return set()
+    
 
+def get_brew_packages() -> set[str]:
+    r"""Get the list of installed Homebrew formula packages.
 
-def get_brew_packages():
-    """
-    Get the list of installed brew packages.
-
-    Uses the brew list command to retrieve all installed formula packages.
-    Handles cases where brew is not installed or fails to execute.
+    Executes 'brew list --formula' to retrieve all installed formula packages.
+    Parses the output where package names are separated by newlines.
+    Handles error cases gracefully by returning an empty set.
 
     Returns:
-        set: A set of package names installed via Homebrew. Returns empty set if
-             brew is not installed or fails.
+        set[str]: A set of package names installed via Homebrew. Returns an empty set if:
+            - brew is not installed
+            - brew command fails to execute
+            - output is empty or malformed
+
+    Example:
+        >>> packages = get_brew_packages()
+        >>> print(packages)
+        {'git', 'vim', 'wget', 'zsh'}
+
+    Note:
+        This function only lists formula packages, not casks. For casks, a separate
+        command 'brew list --cask' would be needed.
     """
     try:
         result = subprocess.run(
-            ["brew", "list", "--formula"], capture_output=True, text=True
+            ["brew", "list", "--formula"], 
+            capture_output=True, 
+            text=True,
+            check=False  # Don't raise CalledProcessError on non-zero return codes
         )
         if result.returncode != 0:
             return set()
-        return set(result.stdout.strip().split("\n"))
+            
+        # Filter out empty strings that might result from trailing newlines
+        packages = {pkg for pkg in result.stdout.strip().split("\n") if pkg}
+        return packages
+        
     except FileNotFoundError:
         return set()
 
 
-def get_flatpak_packages():
-    """
-    Get the list of installed flatpak packages.
+def get_flatpak_packages() -> set[str]:
+    r"""Get the list of installed Flatpak applications.
 
-    Uses the flatpak list command to retrieve all installed applications.
-    Filters output to only include application IDs.
-    Handles cases where flatpak is not installed or fails to execute.
+    Executes 'flatpak list --app --columns=application' to retrieve all installed
+    applications. The command specifically:
+        - Only lists applications (--app), not runtimes
+        - Only includes application IDs (--columns=application)
+        - Returns one application ID per line
+    
+    Handles error cases gracefully by returning an empty set.
 
     Returns:
-        set: A set of application IDs installed via flatpak. Returns empty set if
-             flatpak is not installed or fails.
+        set[str]: A set of application IDs installed via Flatpak. Returns an empty set if:
+            - flatpak is not installed
+            - flatpak command fails to execute
+            - output is empty or malformed
+
+    Example:
+        >>> packages = get_flatpak_packages()
+        >>> print(packages)
+        {'org.mozilla.firefox', 'com.spotify.Client'}
+
+    Note:
+        Application IDs follow the reverse DNS naming convention, e.g.,
+        'org.mozilla.firefox' rather than just 'firefox'.
     """
     try:
         result = subprocess.run(
             ["flatpak", "list", "--app", "--columns=application"],
             capture_output=True,
             text=True,
+            check=False  # Don't raise CalledProcessError on non-zero return codes
         )
         if result.returncode != 0:
             return set()
-        packages = result.stdout.strip().split("\n")
-        return set(pkg for pkg in packages if pkg)
+            
+        # Filter out empty strings that might result from trailing newlines
+        packages = {pkg for pkg in result.stdout.strip().split("\n") if pkg}
+        return packages
+        
     except FileNotFoundError:
         return set()
 
 
 def install_package(pkg_type, package):
-    """
-    Install a package of the specified type.
+    r"""Install a package of the specified type.
 
     Attempts to install a single package using the appropriate package manager.
     Prints status messages and captures any error output.
@@ -169,6 +310,7 @@ def install_package(pkg_type, package):
 
     Returns:
         bool: True if installation succeeded, False if it failed
+
     """
     if pkg_type == "brew":
         cmd = ["brew", "install", package]
@@ -186,8 +328,7 @@ def install_package(pkg_type, package):
 
 
 def remove_package(pkg_type, package):
-    """
-    Remove a package of the specified type.
+    r"""Remove a package of the specified type.
 
     Attempts to remove a single package using the appropriate package manager.
     Prints status messages and captures any error output.
@@ -198,6 +339,7 @@ def remove_package(pkg_type, package):
 
     Returns:
         bool: True if removal succeeded, False if it failed
+
     """
     if pkg_type == "brew":
         cmd = ["brew", "uninstall", package]
@@ -215,8 +357,7 @@ def remove_package(pkg_type, package):
 
 
 def update_packages(pkg_type, timeout=60):
-    """
-    Update all packages of the specified type.
+    r"""Update all packages of the specified type.
 
     Args:
         pkg_type: The package manager to use ('pipx', 'brew', or 'flatpak')
@@ -226,6 +367,7 @@ def update_packages(pkg_type, timeout=60):
         tuple: (success, is_timeout) where:
             - success is True if update completed successfully
             - is_timeout is True if the operation timed out
+
     """
     if pkg_type == "brew":
         cmd = ["brew", "upgrade", "--ignore-depenecies"]
@@ -263,8 +405,7 @@ def update_packages(pkg_type, timeout=60):
 
 
 def update_all_packages():
-    """
-    Get all installed packages from all supported package managers.
+    r"""Get all installed packages from all supported package managers.
 
     Retrieves the complete list of installed packages from pipx, brew, and flatpak.
     Packages that fail to retrieve are represented as empty sets.
@@ -277,6 +418,7 @@ def update_all_packages():
                   'flatpak': {pkg1, pkg2, ...},
                   'pipx': {pkg1, pkg2, ...}
               }
+
     """
     # First check internet connectivity
     print("Checking internet connectivity...")
@@ -352,7 +494,7 @@ def update_all_packages():
 
 
 def get_all_packages():
-    """Get all installed packages."""
+    r"""Get all installed packages."""
     return {
         "brew": get_brew_packages(),
         "flatpak": get_flatpak_packages(),
@@ -361,8 +503,7 @@ def get_all_packages():
 
 
 def print_package_state(machine_name, packages):
-    """
-    Print the package state for a machine.
+    r"""Print the package state for a machine.
 
     Displays a formatted summary of all installed packages, grouped by package manager.
     Sorts package managers and package names alphabetically for consistent output.
@@ -370,6 +511,7 @@ def print_package_state(machine_name, packages):
     Args:
         machine_name: String name of the machine
         packages: Dictionary of package sets by package manager type
+
     """
     print(f"\nPackages for {machine_name}:")
     for pkg_type in sorted(["brew", "flatpak", "pipx"]):
@@ -379,8 +521,7 @@ def print_package_state(machine_name, packages):
 
 
 def install_package(pkg_type, package):
-    """
-    Install a package of the specified type.
+    r"""Install a package of the specified type.
     
     Attempts to install a single package using the appropriate package manager.
     Prints status messages and captures any error output.
@@ -391,7 +532,8 @@ def install_package(pkg_type, package):
         
     Returns:
         bool: True if installation succeeded, False if it failed
-    """ """Install a package of the specified type."""
+
+    """
     if pkg_type == "brew":
         cmd = ["brew", "install", package]
     elif pkg_type == "flatpak":
@@ -408,19 +550,19 @@ def install_package(pkg_type, package):
 
 
 def remove_package(pkg_type, package):
-    """
-    Remove a package of the specified type.
-    
+    r"""Remove a package of the specified type.
+
     Attempts to remove a single package using the appropriate package manager.
     Prints status messages and captures any error output.
-    
+
     Args:
         pkg_type: String indicating package manager ('pipx', 'brew', or 'flatpak')
         package: String name/ID of the package to remove
-        
+
     Returns:
         bool: True if removal succeeded, False if it failed
-    """ """Remove a package of the specified type."""
+
+    """
     if pkg_type == "brew":
         cmd = ["brew", "uninstall", package]
     elif pkg_type == "flatpak":
@@ -437,8 +579,7 @@ def remove_package(pkg_type, package):
 
 
 def update_packages(pkg_type, timeout=60):
-    """
-    Update all packages of the specified type.
+    r"""Update all packages of the specified type.
 
     Args:
         pkg_type: The package manager to use ('pipx', 'brew', or 'flatpak')
@@ -448,6 +589,7 @@ def update_packages(pkg_type, timeout=60):
         tuple: (success, is_timeout) where:
             - success is True if update completed successfully
             - is_timeout is True if the operation timed out
+
     """
     if pkg_type == "brew":
         cmd = ["brew", "upgrade"]
@@ -485,8 +627,7 @@ def update_packages(pkg_type, timeout=60):
 
 
 def update_all_packages():
-    """
-    Get all installed packages from all supported package managers.
+    r"""Get all installed packages from all supported package managers.
 
     Retrieves the complete list of installed packages from pipx, brew, and flatpak.
     Packages that fail to retrieve are represented as empty sets.
@@ -499,6 +640,7 @@ def update_all_packages():
                   'flatpak': {pkg1, pkg2, ...},
                   'pipx': {pkg1, pkg2, ...}
               }
+
     """
     # First check internet connectivity
     print("Checking internet connectivity...")
@@ -574,7 +716,7 @@ def update_all_packages():
 
 
 def get_all_packages():
-    """Get all installed packages."""
+    r"""Get all installed packages."""
     return {
         "brew": get_brew_packages(),
         "flatpak": get_flatpak_packages(),
@@ -583,16 +725,16 @@ def get_all_packages():
 
 
 def print_package_state(machine_name, packages):
-    """
-    Print the package state for a machine.
-    
+    r"""Print the package state for a machine.
+
     Displays a formatted summary of all installed packages, grouped by package manager.
     Sorts package managers and package names alphabetically for consistent output.
-    
+
     Args:
         machine_name: String name of the machine
         packages: Dictionary of package sets by package manager type
-    """ """Print the package state for a machine."""
+
+    """
     print(f"\nPackages for {machine_name}:")
     for pkg_type in sorted(["pipx", "brew", "flatpak"]):
         pkgs = packages.get(pkg_type, set())
@@ -668,7 +810,7 @@ def sync_packages(machine_name, make_primary=False):
 
 
 def main():
-    """Main function to parse arguments and handle package operations."""
+    r"""Main function to parse arguments and handle package operations."""
     parser = argparse.ArgumentParser(
         description="Sync and update packages across machines"
     )
