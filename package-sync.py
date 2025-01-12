@@ -5,8 +5,7 @@ from pathlib import Path
 from datetime import datetime
 import argparse
 import shutil
-from typing import TypeAlias, Dict, List, Set, Any, Optional, Tuple
-
+from typing import TypeAlias, Dict, List, Set, Any, Optional, Tuple, Literal 
 
 # Type aliases for better clarity
 MachineConfig: TypeAlias = Dict[str, Dict[str, Any]]
@@ -151,7 +150,7 @@ def save_config(config: ConfigDict) -> None:
                     "flatpak": set[str],
                     "pipx": set[str]
                 },
-                "last_update": str  # ISO format datetime
+               "last_update": str  # ISO format datetime
             },
             ...
         },
@@ -298,19 +297,38 @@ def get_flatpak_packages() -> set[str]:
         return set()
 
 
-def install_package(pkg_type, package):
-    r"""Install a package of the specified type.
+def install_package(
+    pkg_type: Literal["brew", "flatpak", "pipx"],
+    package: str,
+) -> bool:
+    r"""Install a package using the specified package manager.
 
     Attempts to install a single package using the appropriate package manager.
-    Prints status messages and captures any error output.
+    The function supports three package managers: brew, flatpak, and pipx.
+    Installation status messages and any error output are printed to stdout.
 
     Args:
-        pkg_type: String indicating package manager ('pipx', 'brew', or 'flatpak')
-        package: String name/ID of the package to install
+        pkg_type: Package manager to use. Must be one of: 'brew', 'flatpak', or 'pipx'
+        package: Name or ID of the package to install
 
     Returns:
-        bool: True if installation succeeded, False if it failed
+        Success status of the installation:
+            - True if package was installed successfully
+            - False if installation failed or package manager command errored
 
+    Examples:
+        >>> install_package("pipx", "black")
+        Installing pipx package: black
+        True
+        
+        >>> install_package("flatpak", "org.mozilla.firefox")
+        Installing flatpak package: org.mozilla.firefox
+        True
+
+    Notes:
+        - For flatpak installations, the -y flag is used to automatically accept prompts
+        - Installation errors will print the stderr output before returning False
+        - Requires the package manager to be installed and available in PATH
     """
     if pkg_type == "brew":
         cmd = ["brew", "install", package]
@@ -356,21 +374,42 @@ def remove_package(pkg_type, package):
     return True
 
 
-def update_packages(pkg_type, timeout=60):
-    r"""Update all packages of the specified type.
+def update_packages(
+    pkg_type: Literal["brew", "flatpak", "pipx"],
+    timeout: float = 60,
+) -> Tuple[bool, bool]:
+    r"""Update all packages of the specified package manager.
+
+    Attempts to update all installed packages using the specified package manager.
+    The operation has a configurable timeout to prevent hanging. Status messages 
+    and any error output are printed to stdout.
 
     Args:
-        pkg_type: The package manager to use ('pipx', 'brew', or 'flatpak')
-        timeout: Maximum time in seconds to wait for the update
+        pkg_type: Package manager to use. Must be one of: 'brew', 'flatpak', or 'pipx'
+        timeout: Maximum time in seconds to wait for the update operation to complete
 
     Returns:
-        tuple: (success, is_timeout) where:
-            - success is True if update completed successfully
-            - is_timeout is True if the operation timed out
+        A tuple of (success, is_timeout) where:
+            - success: True if all packages were updated successfully
+            - is_timeout: True if the operation exceeded the timeout duration
 
+    Examples:
+        >>> update_packages("pipx")  # Default 60s timeout
+        Updating pipx packages...
+        (True, False)
+        
+        >>> update_packages("flatpak", timeout=120)  # Extended timeout
+        Updating flatpak packages...
+        (True, False)
+
+    Notes:
+        - For brew updates, uses --ignore-dependencies flag
+        - For flatpak updates, -y flag is used to automatically accept prompts
+        - Timeouts are treated as update failures (success=False)
+        - Non-timeout errors print diagnostic information before returning
     """
     if pkg_type == "brew":
-        cmd = ["brew", "upgrade", "--ignore-depenecies"]
+        cmd = ["brew", "upgrade", "--ignore-dependencies"]  # Fixed typo in dependencies
     elif pkg_type == "flatpak":
         cmd = ["flatpak", "update", "-y"]
     elif pkg_type == "pipx":
