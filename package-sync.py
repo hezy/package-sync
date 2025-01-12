@@ -20,7 +20,7 @@ def check_internet_connection(
     hosts: list[str] | None = None
 ) -> tuple[bool, float | None]:
     r"""Check internet connectivity by pinging multiple reliable hosts.
-    
+
     If no hosts are provided, checks connectivity using well-known DNS servers
     (Google DNS, Cloudflare DNS, and OpenDNS). Each host is pinged with a 2-second
     timeout. Returns both connection status and best observed latency.
@@ -32,7 +32,7 @@ def check_internet_connection(
         A tuple containing:
             - A boolean indicating if any host responded successfully
             - The best response time in milliseconds, or None if all pings failed
-        
+
     Example:
         >>> is_connected, latency = check_internet_connection()
         >>> print(f"Connected: {is_connected}, Latency: {latency}ms")
@@ -85,7 +85,7 @@ def load_config() -> Dict[str, Any]:
 
     if CONFIG_PATH.exists():
         try:
-            with open(CONFIG_PATH) as f:
+            with Path.open(CONFIG_PATH) as f:
                 return json.load(f)
         except json.JSONDecodeError:
             backup_path = CONFIG_PATH.with_suffix(".json.bak")
@@ -170,6 +170,7 @@ def save_config(config: ConfigDict) -> None:
     Raises:
         OSError: If there are filesystem permission issues or other IO errors
         TypeError: If the config contains types that can't be JSON serialized
+
     """
     config_copy = sets_to_lists(config)
     with open(CONFIG_PATH, "w") as f:
@@ -179,16 +180,17 @@ def save_config(config: ConfigDict) -> None:
 def get_pipx_packages() -> set[str]:
     r"""Get the list of installed pipx packages.
 
-    Executes 'pipx list --json' to retrieve all installed packages in JSON format.
-    Parses the JSON output to extract package names from the virtual environments.
-    Handles error cases gracefully by returning an empty set.
+    Executes 'pipx list --json' to retrieve all installed packages in JSON
+    format. Parses the JSON output to extract package names from the virtual
+    environments. Handles error cases gracefully by returning an empty set.
 
     Note:
-        This function assumes pipx's JSON output structure contains a 'venvs' key
-        mapping to a dictionary of virtual environments.
+        This function assumes pipx's JSON output structure contains a 'venvs'
+        key mapping to a dictionary of virtual environments.
 
     Returns:
-        set[str]: A set of package names installed via pipx. Returns an empty set if:
+        set[str]: A set of package names installed via pipx. Returns an empty
+        set if:
             - pipx is not installed
             - pipx command fails to execute
             - JSON output cannot be parsed
@@ -198,6 +200,7 @@ def get_pipx_packages() -> set[str]:
         >>> packages = get_pipx_packages()
         >>> print(packages)
         {'black', 'mypy', 'ruff'}
+
     """
     try:
         result = subprocess.run(
@@ -211,7 +214,7 @@ def get_pipx_packages() -> set[str]:
         return set(json.loads(result.stdout)["venvs"].keys())
     except (FileNotFoundError, json.JSONDecodeError, KeyError):
         return set()
-    
+
 
 def get_brew_packages() -> set[str]:
     r"""Get the list of installed Homebrew formula packages.
@@ -234,6 +237,7 @@ def get_brew_packages() -> set[str]:
     Note:
         This function only lists formula packages, not casks. For casks, a separate
         command 'brew list --cask' would be needed.
+
     """
     try:
         result = subprocess.run(
@@ -244,11 +248,11 @@ def get_brew_packages() -> set[str]:
         )
         if result.returncode != 0:
             return set()
-            
+
         # Filter out empty strings that might result from trailing newlines
         packages = {pkg for pkg in result.stdout.strip().split("\n") if pkg}
         return packages
-        
+
     except FileNotFoundError:
         return set()
 
@@ -256,12 +260,12 @@ def get_brew_packages() -> set[str]:
 def get_flatpak_packages() -> set[str]:
     r"""Get the list of installed Flatpak applications.
 
-    Executes 'flatpak list --app --columns=application' to retrieve all installed
-    applications. The command specifically:
+    Executes 'flatpak list --app --columns=application' to retrieve all
+    installed applications. The command specifically:
         - Only lists applications (--app), not runtimes
         - Only includes application IDs (--columns=application)
         - Returns one application ID per line
-    
+
     Handles error cases gracefully by returning an empty set.
 
     Returns:
@@ -278,6 +282,7 @@ def get_flatpak_packages() -> set[str]:
     Note:
         Application IDs follow the reverse DNS naming convention, e.g.,
         'org.mozilla.firefox' rather than just 'firefox'.
+
     """
     try:
         result = subprocess.run(
@@ -288,11 +293,11 @@ def get_flatpak_packages() -> set[str]:
         )
         if result.returncode != 0:
             return set()
-            
+
         # Filter out empty strings that might result from trailing newlines
         packages = {pkg for pkg in result.stdout.strip().split("\n") if pkg}
         return packages
-        
+
     except FileNotFoundError:
         return set()
 
@@ -320,7 +325,7 @@ def install_package(
         >>> install_package("pipx", "black")
         Installing pipx package: black
         True
-        
+
         >>> install_package("flatpak", "org.mozilla.firefox")
         Installing flatpak package: org.mozilla.firefox
         True
@@ -329,6 +334,7 @@ def install_package(
         - For flatpak installations, the -y flag is used to automatically accept prompts
         - Installation errors will print the stderr output before returning False
         - Requires the package manager to be installed and available in PATH
+
     """
     if pkg_type == "brew":
         cmd = ["brew", "install", package]
@@ -352,8 +358,8 @@ def remove_package(pkg_type, package):
     Prints status messages and captures any error output.
 
     Args:
-        pkg_type: String indicating package manager ('pipx', 'brew', or 'flatpak')
-        package: String name/ID of the package to remove
+        pkg_type: String indicating package manager ('pipx', 'brew', or
+        'flatpak') package: String name/ID of the package to remove
 
     Returns:
         bool: True if removal succeeded, False if it failed
@@ -377,16 +383,18 @@ def remove_package(pkg_type, package):
 def update_packages(
     pkg_type: Literal["brew", "flatpak", "pipx"],
     timeout: float = 60,
-) -> Tuple[bool, bool]:
+) -> tuple[bool, bool]:
     r"""Update all packages of the specified package manager.
 
-    Attempts to update all installed packages using the specified package manager.
-    The operation has a configurable timeout to prevent hanging. Status messages 
-    and any error output are printed to stdout.
+    Attempts to update all installed packages using the specified package
+    manager. The operation has a configurable timeout to prevent hanging. Status
+    messages and any error output are printed to stdout.
 
     Args:
-        pkg_type: Package manager to use. Must be one of: 'brew', 'flatpak', or 'pipx'
-        timeout: Maximum time in seconds to wait for the update operation to complete
+        pkg_type: Package manager to use. Must be one of:
+        'brew', 'flatpak', or 'pipx'
+        timeout: Maximum time in seconds to wait for the update operation to
+        complete
 
     Returns:
         A tuple of (success, is_timeout) where:
@@ -397,7 +405,7 @@ def update_packages(
         >>> update_packages("pipx")  # Default 60s timeout
         Updating pipx packages...
         (True, False)
-        
+
         >>> update_packages("flatpak", timeout=120)  # Extended timeout
         Updating flatpak packages...
         (True, False)
@@ -407,6 +415,7 @@ def update_packages(
         - For flatpak updates, -y flag is used to automatically accept prompts
         - Timeouts are treated as update failures (success=False)
         - Non-timeout errors print diagnostic information before returning
+
     """
     if pkg_type == "brew":
         cmd = ["brew", "upgrade", "--ignore-dependencies"]  # Fixed typo in dependencies
@@ -446,12 +455,12 @@ def update_packages(
 def update_all_packages():
     r"""Get all installed packages from all supported package managers.
 
-    Retrieves the complete list of installed packages from pipx, brew, and flatpak.
-    Packages that fail to retrieve are represented as empty sets.
+    Retrieves the complete list of installed packages from pipx, brew, and
+    flatpak. Packages that fail to retrieve are represented as empty sets.
 
     Returns:
-        dict: A dictionary with package manager names as keys and sets of installed
-              packages as values. Format:
+        dict: A dictionary with package manager names as keys and sets of
+        installed packages as values. Format:
               {
                   'brew': {pkg1, pkg2, ...},
                   'flatpak': {pkg1, pkg2, ...},
@@ -561,14 +570,15 @@ def print_package_state(machine_name, packages):
 
 def install_package(pkg_type, package):
     r"""Install a package of the specified type.
-    
+
     Attempts to install a single package using the appropriate package manager.
     Prints status messages and captures any error output.
-    
+
     Args:
-        pkg_type: String indicating package manager ('brew', 'flatpak' or 'pipx')
+        pkg_type: String indicating package manager ('brew', 'flatpak' or
+        'pipx')
         package: String name/ID of the package to install
-        
+
     Returns:
         bool: True if installation succeeded, False if it failed
 
@@ -595,7 +605,8 @@ def remove_package(pkg_type, package):
     Prints status messages and captures any error output.
 
     Args:
-        pkg_type: String indicating package manager ('pipx', 'brew', or 'flatpak')
+        pkg_type: String indicating package manager ('pipx', 'brew', or
+        'flatpak')
         package: String name/ID of the package to remove
 
     Returns:
@@ -668,8 +679,8 @@ def update_packages(pkg_type, timeout=60):
 def update_all_packages():
     r"""Get all installed packages from all supported package managers.
 
-    Retrieves the complete list of installed packages from pipx, brew, and flatpak.
-    Packages that fail to retrieve are represented as empty sets.
+    Retrieves the complete list of installed packages from pipx, brew, and
+    flatpak. Packages that fail to retrieve are represented as empty sets.
 
     Returns:
         dict: A dictionary with package manager names as keys and sets of installed
