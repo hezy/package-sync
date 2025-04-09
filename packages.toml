@@ -1,0 +1,101 @@
+# packages.toml
+[apt]
+packages = [
+    "xclip",
+    "xsel",
+    "git",
+    "htop",
+    "pandoc",
+    "copyq",
+    "feh",
+    "foliate",
+    "easyeffects",
+    "inkscape",
+    "inkscape-open-symbols",
+    "inkscape-textext",
+    "kdeconnect",
+    "konsole",
+    "krita",
+    "lyx",
+    "meld",
+    "mpv",
+    "nextcloud-desktop",
+    "qalc",
+    "qalculate-gtk",
+    "texstudio",
+    "timeshift",
+    "vokoscreen-ng",
+    "xournalpp",
+    "zathura",
+    "zathura-djvu",
+    "zathura-pdf-poppler",
+    "zathura-ps",
+    "zim"
+]
+
+[flatpak]
+packages = [
+    "com.bitwarden.desktop",
+    "com.github.flxzt.rnote",
+    "com.zettlr.Zettlr",
+    "io.freetubeapp.freeTube",
+    "io.github.ungoogled_software.ungoggled_chromium",
+    "io.github.voxelcubes.hand-tex",
+    "io.gitlab.librewolf-community",
+    "org.gimp.GIMP",
+    "org.gtk.Gtk3theme.Mint-Y-Dark-Aqua",
+    "org.gtk.Gtk3theme.Mint-Y-Dark-Orange",
+    "org.gtk.Gtk3theme.Mint-Y-Dark-Purple",
+    "org.gtk.Gtk3theme.Mint-Y-Dark-Teal",
+    "org.jabref.jabref",
+    "org.kde.falkon",
+    "org.rncbc.qpwgrap"
+]
+
+[homebrew]
+packages = [
+    "atuin",
+    "bat",
+    "carapace",
+    "difftastic",
+    "dust",
+    "eza",
+    "fzf",
+    "fd",
+    "git-delta",
+    "glow",
+    "helix",
+    "just",
+    "lazygit",
+    "markdown-oxide",
+    "navi",
+    "nushell",
+    "procs",
+    "sd",
+    "ripgrep",
+    "syncthing",
+    "texlab",
+    "tidy-viewer",
+    "tinymist",
+    "typst",
+    "typstyle",
+    "xsv",
+    "yazi",
+    "zellij",
+    "zoxide"
+]
+
+[uv]
+packages = [
+    "basedpyright",
+    "csvkit",
+    "gds3xtrude",
+    "ipython",
+    "jupyterlab",
+    "jupytext",
+    "ptpython",
+    "rich-cli",
+    "ruff",
+    "tldr",
+    "trash-cli"
+]
