@@ -1,11 +1,23 @@
 # packages.toml
 [apt]
 packages = [
-    "xclip",
-    "xsel",
+    "bat",
+    "btop",
+    "cowsay",
+    "culmus",
+    "distrobox",
+    "fd-find",
     "git",
     "htop",
+    "hunspell",
+    "hunspell-he",
+    "markdown",
+    "miller",
+    "nala",
     "pandoc",
+    "podman",
+    "xclip",
+    "xsel",
     "copyq",
     "feh",
     "foliate",
@@ -13,7 +25,9 @@ packages = [
     "inkscape",
     "inkscape-open-symbols",
     "inkscape-textext",
+    "jq",
     "kdeconnect",
+    "klayout",
     "konsole",
     "krita",
     "lyx",
@@ -22,15 +36,27 @@ packages = [
     "nextcloud-desktop",
     "qalc",
     "qalculate-gtk",
+    "q4wine",
+    "qt5ct",
+    "remmina",
+    "remmina-plugin-rdp",
+    "remmina-plugin-vnc",
+    "ripgrep",    
+    "stow",
     "texstudio",
+    "tree",
+    "ttf-mscorefonts-installer",
     "timeshift",
+    "virt-manager",
+    "vlc",
     "vokoscreen-ng",
     "xournalpp",
     "zathura",
     "zathura-djvu",
     "zathura-pdf-poppler",
     "zathura-ps",
-    "zim"
+    "zim",
+    "zim-tools"
 ]
 
 [flatpak]
@@ -38,18 +64,14 @@ packages = [
     "com.bitwarden.desktop",
     "com.github.flxzt.rnote",
     "com.zettlr.Zettlr",
-    "io.freetubeapp.freeTube",
-    "io.github.ungoogled_software.ungoggled_chromium",
+    "io.freetubeapp.FreeTube",
+    "io.github.ungoogled_software.ungoogled_chromium",
     "io.github.voxelcubes.hand-tex",
     "io.gitlab.librewolf-community",
     "org.gimp.GIMP",
-    "org.gtk.Gtk3theme.Mint-Y-Dark-Aqua",
-    "org.gtk.Gtk3theme.Mint-Y-Dark-Orange",
-    "org.gtk.Gtk3theme.Mint-Y-Dark-Purple",
-    "org.gtk.Gtk3theme.Mint-Y-Dark-Teal",
     "org.jabref.jabref",
     "org.kde.falkon",
-    "org.rncbc.qpwgrap"
+    "org.rncbc.qpwgraph"
 ]
 
 [homebrew]
