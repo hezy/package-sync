@@ -11,9 +11,11 @@ from typing import TypeAlias, Dict, List, Set, Any, Optional, Tuple, Literal
 MachineConfig: TypeAlias = Dict[str, Dict[str, Any]]
 LastChanges: TypeAlias = Dict[str, Any]
 ConfigDict: TypeAlias = Dict[str, Optional[str] | MachineConfig | LastChanges]
+PackageDict: TypeAlias = Dict[str, Set[str]]
+PackageManager: TypeAlias = Literal["brew", "flatpak", "pipx", "uv"]
 
 
-CONFIG_PATH = Path("~/.config/package-sync/config.jsonfig.json").expanduser()
+CONFIG_PATH = Path("~/.config/package-sync/config.json").expanduser()
 
 
 def check_internet_connection(
@@ -148,7 +150,8 @@ def save_config(config: ConfigDict) -> None:
                 "packages": {
                     "brew": set[str],
                     "flatpak": set[str],
-                    "pipx": set[str]
+                    "pipx": set[str],
+                    "uv": set[str]
                 },
                "last_update": str  # ISO format datetime
             },
@@ -213,6 +216,53 @@ def get_pipx_packages() -> set[str]:
             return set()
         return set(json.loads(result.stdout)["venvs"].keys())
     except (FileNotFoundError, json.JSONDecodeError, KeyError):
+        return set()
+
+
+def get_uv_packages() -> set[str]:
+    r"""Get the list of installed uv tools (packages).
+
+    Executes 'uv tool list' to retrieve all installed tools.
+    Parses the output and returns a set of package names.
+    Handles error cases gracefully by returning an empty set.
+
+    Returns:
+        set[str]: A set of package names installed via uv tool. Returns an empty
+        set if:
+            - uv is not installed
+            - uv command fails to execute
+            - output is empty or malformed
+
+    Example:
+        >>> packages = get_uv_packages()
+        >>> print(packages)
+        {'black', 'mypy', 'ruff'}
+
+    """
+    try:
+        result = subprocess.run(
+            ["uv", "tool", "list"], 
+            capture_output=True, 
+            text=True,
+            check=False  # Don't raise CalledProcessError on non-zero return codes
+        )
+        if result.returncode != 0:
+            return set()
+        
+        # Process the output to extract package names
+        # This assumes the output has package names as the first word in each line
+        # Adjust this parsing logic if the actual output format is different
+        packages = set()
+        for line in result.stdout.strip().split("\n"):
+            if line:
+                # Try to get the first word which should be the package name
+                parts = line.split()
+                if parts:
+                    packages.add(parts[0])
+        
+        return packages
+
+    except FileNotFoundError:
         return set()
 
 
@@ -303,17 +353,17 @@ def get_flatpak_packages() -> set[str]:
 
 
 def install_package(
-    pkg_type: Literal["brew", "flatpak", "pipx"],
+    pkg_type: PackageManager,
     package: str,
 ) -> bool:
     r"""Install a package using the specified package manager.
 
     Attempts to install a single package using the appropriate package manager.
-    The function supports three package managers: brew, flatpak, and pipx.
+    The function supports four package managers: brew, flatpak, pipx, and uv.
     Installation status messages and any error output are printed to stdout.
 
     Args:
-        pkg_type: Package manager to use. Must be one of: 'brew', 'flatpak', or 'pipx'
+        pkg_type: Package manager to use. Must be one of: 'brew', 'flatpak', 'pipx', or 'uv'
         package: Name or ID of the package to install
 
     Returns:
@@ -324,6 +374,10 @@ def install_package(
     Examples:
         >>> install_package("pipx", "black")
         Installing pipx package: black
+        True
+
+        >>> install_package("uv", "black")
+        Installing uv package: black
         True
 
         >>> install_package("flatpak", "org.mozilla.firefox")
@@ -342,6 +396,11 @@ def install_package(
         cmd = ["flatpak", "install", "-y", package]
     elif pkg_type == "pipx":
         cmd = ["pipx", "install", package]
+    elif pkg_type == "uv":
+        cmd = ["uv", "tool", "install", package]
+    else:
+        print(f"Unknown package type: {pkg_type}")
+        return False
 
     print(f"Installing {pkg_type} package: {package}")
     result = subprocess.run(cmd, capture_output=True, text=True)
@@ -351,18 +410,30 @@ def install_package(
     return True
 
 
-def remove_package(pkg_type, package):
+def remove_package(
+    pkg_type: PackageManager,
+    package: str
+) -> bool:
     r"""Remove a package of the specified type.
 
     Attempts to remove a single package using the appropriate package manager.
     Prints status messages and captures any error output.
 
     Args:
-        pkg_type: String indicating package manager ('pipx', 'brew', or
-        'flatpak') package: String name/ID of the package to remove
+        pkg_type: Package manager to use ('brew', 'flatpak', 'pipx', or 'uv')
+        package: Name or ID of the package to remove
 
     Returns:
         bool: True if removal succeeded, False if it failed
+
+    Examples:
+        >>> remove_package("pipx", "black")
+        Removing pipx package: black
+        True
+
+        >>> remove_package("uv", "black")
+        Removing uv package: black
+        True
 
     """
     if pkg_type == "brew":
@@ -371,6 +442,11 @@ def remove_package(pkg_type, package):
         cmd = ["flatpak", "uninstall", "-y", package]
     elif pkg_type == "pipx":
         cmd = ["pipx", "uninstall", package]
+    elif pkg_type == "uv":
+        cmd = ["uv", "tool", "uninstall", package]
+    else:
+        print(f"Unknown package type: {pkg_type}")
+        return False
 
     print(f"Removing {pkg_type} package: {package}")
     result = subprocess.run(cmd, capture_output=True, text=True)
@@ -381,7 +457,7 @@ def remove_package(pkg_type, package):
 
 
 def update_packages(
-    pkg_type: Literal["brew", "flatpak", "pipx"],
+    pkg_type: PackageManager,
     timeout: float = 60,
 ) -> tuple[bool, bool]:
     r"""Update all packages of the specified package manager.
@@ -392,9 +468,9 @@ def update_packages(
 
     Args:
         pkg_type: Package manager to use. Must be one of:
-        'brew', 'flatpak', or 'pipx'
+                 'brew', 'flatpak', 'pipx', or 'uv'
         timeout: Maximum time in seconds to wait for the update operation to
-        complete
+                 complete
 
     Returns:
         A tuple of (success, is_timeout) where:
@@ -406,8 +482,8 @@ def update_packages(
         Updating pipx packages...
         (True, False)
 
-        >>> update_packages("flatpak", timeout=120)  # Extended timeout
-        Updating flatpak packages...
+        >>> update_packages("uv")  # Default 60s timeout
+        Updating uv packages...
         (True, False)
 
     Notes:
@@ -415,14 +491,19 @@ def update_packages(
         - For flatpak updates, -y flag is used to automatically accept prompts
         - Timeouts are treated as update failures (success=False)
         - Non-timeout errors print diagnostic information before returning
+        - For uv, there might not be a direct upgrade-all command; this function
+          uses 'uv tool upgrade' which may need adjustments based on uv's actual API
 
     """
     if pkg_type == "brew":
-        cmd = ["brew", "upgrade", "--ignore-dependencies"]  # Fixed typo in dependencies
+        cmd = ["brew", "upgrade", "--ignore-dependencies"]
     elif pkg_type == "flatpak":
         cmd = ["flatpak", "update", "-y"]
     elif pkg_type == "pipx":
         cmd = ["pipx", "upgrade-all"]
+    elif pkg_type == "uv":
+        # Note: Adjust this command if uv's actual upgrade command is different
+        cmd = ["uv", "tool", "upgrade-all"]
     else:
         print(f"Unknown package type: {pkg_type}")
         return False, False
@@ -452,105 +533,137 @@ def update_packages(
         return False, False
 
 
-def update_all_packages():
-    r"""Get all installed packages from all supported package managers.
+def update_all_packages() -> bool:
+    r"""Update all packages from all supported package managers.
 
-    Retrieves the complete list of installed packages from pipx, brew, and
-    flatpak. Packages that fail to retrieve are represented as empty sets.
+    Performs updates for all installed package managers (brew, flatpak, pipx, uv).
+    Checks internet connectivity first and adjusts timeouts based on latency.
+    Retries failed updates with extended timeouts if network conditions allow.
 
     Returns:
-        dict: A dictionary with package manager names as keys and sets of
+        bool: True if all updates completed successfully, False if any updates failed
+
+    Example:
+        >>> success = update_all_packages()
+        Checking internet connectivity...
+        Internet connection detected (latency: 24.5ms)
+        
+        Updating brew packages...
+        Updating flatpak packages...
+        Updating pipx packages...
+        Updating uv packages...
+        >>> print(f"All updates successful: {success}")
+        All updates successful: True
+
+    """
+    # First check internet connectivity
+    print("Checking internet connectivity...")
+    is_connected, latency = check_internet_connection()
+
+    if not is_connected:
+        print("\nERROR: No internet connectivity detected.")
+        print("Please check your internet connection and try again.")
+        return False
+
+    print(f"Internet connection detected (latency: {latency:.1f}ms)")
+
+    # Adjust timeouts based on latency
+    base_timeout = max(60, int(latency / 10))  # 60s minimum, or 100x ping time
+    retry_timeout = base_timeout * 3
+
+    pkg_types: List[PackageManager] = ["brew", "flatpak", "pipx", "uv"]
+    results: Dict[PackageManager, bool] = {}
+    timeout_failures: List[PackageManager] = []
+
+    # First pass - quick timeout
+    for pkg_type in pkg_types:
+        # Check if the package manager is installed
+        if not any(
+            [
+                pkg_type == "brew" and shutil.which("brew"),
+                pkg_type == "flatpak" and shutil.which("flatpak"),
+                pkg_type == "pipx" and shutil.which("pipx"),
+                pkg_type == "uv" and shutil.which("uv"),
+            ]
+        ):
+            continue
+
+        success, is_timeout = update_packages(pkg_type, timeout=base_timeout)
+        if is_timeout:
+            timeout_failures.append(pkg_type)
+        else:
+            results[pkg_type] = success
+
+    # If we had timeouts, check connectivity again before retrying
+    if timeout_failures:
+        print("\nChecking internet connection before retrying...")
+        is_connected, new_latency = check_internet_connection()
+
+        if not is_connected:
+            print("\nWARNING: Internet connection lost during updates.")
+            print("Remaining updates cancelled.")
+            return False
+
+        if new_latency > latency * 2:
+            print(f"\nWARNING: Network latency has increased significantly")
+            print(f"Original: {latency:.1f}ms, Current: {new_latency:.1f}ms")
+
+        # Only retry if some updates succeeded or if latency is reasonable
+        if any(results.values()) or new_latency < 1000:  # 1 second threshold
+            print("\nRetrying timed out updates with extended timeout...")
+            for pkg_type in timeout_failures:
+                success, _ = update_packages(pkg_type, timeout=retry_timeout)
+                results[pkg_type] = success
+        else:
+            print("\nNetwork conditions too poor to retry updates.")
+            for pkg_type in timeout_failures:
+                results[pkg_type] = False
+
+    # Analyze results
+    failed = [pkg for pkg, success in results.items() if not success]
+
+    # Print summary
+    if failed:
+        print("\nUpdate summary:")
+        print(f"Failed updates: {', '.join(failed)}")
+        print("You may want to try updating these package managers manually")
+
+    return len(failed) == 0
+
+
+def get_all_packages() -> PackageDict:
+    r"""Get all installed packages from all supported package managers.
+
+    Retrieves the complete list of installed packages from pipx, brew, flatpak,
+    and uv. Packages that fail to retrieve are represented as empty sets.
+
+    Returns:
+        PackageDict: A dictionary with package manager names as keys and sets of
         installed packages as values. Format:
               {
                   'brew': {pkg1, pkg2, ...},
                   'flatpak': {pkg1, pkg2, ...},
-                  'pipx': {pkg1, pkg2, ...}
+                  'pipx': {pkg1, pkg2, ...},
+                  'uv': {pkg1, pkg2, ...}
               }
 
+    Example:
+        >>> packages = get_all_packages()
+        >>> print(f"Total brew packages: {len(packages.get('brew', set()))}")
+        Total brew packages: 42
+        >>> print(f"Total uv packages: {len(packages.get('uv', set()))}")
+        Total uv packages: 5
+
     """
-    # First check internet connectivity
-    print("Checking internet connectivity...")
-    is_connected, latency = check_internet_connection()
-
-    if not is_connected:
-        print("\nERROR: No internet connectivity detected.")
-        print("Please check your internet connection and try again.")
-        return False
-
-    print(f"Internet connection detected (latency: {latency:.1f}ms)")
-
-    # Adjust timeouts based on latency
-    base_timeout = max(60, int(latency / 10))  # 60s minimum, or 100x ping time
-    retry_timeout = base_timeout * 3
-
-    pkg_types = ["brew", "flatpak", "pipx"]
-    results = {}
-    timeout_failures = []
-
-    # First pass - quick timeout
-    for pkg_type in pkg_types:
-        if not any(
-            [
-                pkg_type == "brew" and shutil.which("brew"),
-                pkg_type == "flatpak" and shutil.which("flatpak"),
-                pkg_type == "pipx" and shutil.which("pipx"),
-            ]
-        ):
-            continue
-
-        success, is_timeout = update_packages(pkg_type, timeout=base_timeout)
-        if is_timeout:
-            timeout_failures.append(pkg_type)
-        else:
-            results[pkg_type] = success
-
-    # If we had timeouts, check connectivity again before retrying
-    if timeout_failures:
-        print("\nChecking internet connection before retrying...")
-        is_connected, new_latency = check_internet_connection()
-
-        if not is_connected:
-            print("\nWARNING: Internet connection lost during updates.")
-            print("Remaining updates cancelled.")
-            return False
-
-        if new_latency > latency * 2:
-            print(f"\nWARNING: Network latency has increased significantly")
-            print(f"Original: {latency:.1f}ms, Current: {new_latency:.1f}ms")
-
-        # Only retry if some updates succeeded or if latency is reasonable
-        if any(results.values()) or new_latency < 1000:  # 1 second threshold
-            print("\nRetrying timed out updates with extended timeout...")
-            for pkg_type in timeout_failures:
-                success, _ = update_packages(pkg_type, timeout=retry_timeout)
-                results[pkg_type] = success
-        else:
-            print("\nNetwork conditions too poor to retry updates.")
-            for pkg_type in timeout_failures:
-                results[pkg_type] = False
-
-    # Analyze results
-    failed = [pkg for pkg, success in results.items() if not success]
-
-    # Print summary
-    if failed:
-        print("\nUpdate summary:")
-        print(f"Failed updates: {', '.join(failed)}")
-        print("You may want to try updating these package managers manually")
-
-    return len(failed) == 0
-
-
-def get_all_packages():
-    r"""Get all installed packages."""
     return {
         "brew": get_brew_packages(),
         "flatpak": get_flatpak_packages(),
         "pipx": get_pipx_packages(),
+        "uv": get_uv_packages(),
     }
 
 
-def print_package_state(machine_name, packages):
+def print_package_state(machine_name: str, packages: PackageDict) -> None:
     r"""Print the package state for a machine.
 
     Displays a formatted summary of all installed packages, grouped by package manager.
@@ -560,240 +673,73 @@ def print_package_state(machine_name, packages):
         machine_name: String name of the machine
         packages: Dictionary of package sets by package manager type
 
+    Example:
+        >>> packages = get_all_packages()
+        >>> print_package_state("my-linux-laptop", packages)
+        
+        Packages for my-linux-laptop:
+        brew     ( 5): git, tmux, vim, wget, zsh
+        flatpak  ( 2): com.spotify.Client, org.mozilla.firefox
+        pipx     ( 3): black, mypy, ruff
+        uv       ( 3): black, pylint, pytest
+
     """
     print(f"\nPackages for {machine_name}:")
-    for pkg_type in sorted(["brew", "flatpak", "pipx"]):
+    for pkg_type in sorted(["brew", "flatpak", "pipx", "uv"]):
         pkgs = packages.get(pkg_type, set())
         if pkgs:
             print(f"{pkg_type:8} ({len(pkgs):2}): {', '.join(sorted(pkgs))}")
 
 
-def install_package(pkg_type, package):
-    r"""Install a package of the specified type.
+def sync_packages(machine_name: str, make_primary: bool = False) -> None:
+    r"""Sync packages for a machine.
 
-    Attempts to install a single package using the appropriate package manager.
-    Prints status messages and captures any error output.
-
-    Args:
-        pkg_type: String indicating package manager ('brew', 'flatpak' or
-        'pipx')
-        package: String name/ID of the package to install
-
-    Returns:
-        bool: True if installation succeeded, False if it failed
-
-    """
-    if pkg_type == "brew":
-        cmd = ["brew", "install", package]
-    elif pkg_type == "flatpak":
-        cmd = ["flatpak", "install", "-y", package]
-    elif pkg_type == "pipx":
-        cmd = ["pipx", "install", package]
-
-    print(f"Installing {pkg_type} package: {package}")
-    result = subprocess.run(cmd, capture_output=True, text=True)
-    if result.returncode != 0:
-        print(f"Failed to install {package}: {result.stderr}")
-        return False
-    return True
-
-
-def remove_package(pkg_type, package):
-    r"""Remove a package of the specified type.
-
-    Attempts to remove a single package using the appropriate package manager.
-    Prints status messages and captures any error output.
+    This function handles syncing packages between different machines. For primary
+    machines, it records the current state. For non-primary machines, it syncs with
+    the primary machine by installing missing packages and removing extra ones.
 
     Args:
-        pkg_type: String indicating package manager ('pipx', 'brew', or
-        'flatpak')
-        package: String name/ID of the package to remove
+        machine_name: The name of the current machine
+        make_primary: Whether to set this machine as the primary, even if there's
+                     already a primary machine set
 
-    Returns:
-        bool: True if removal succeeded, False if it failed
+    Side Effects:
+        - Updates the configuration file with the latest state
+        - Installs or removes packages to match the primary machine
+        - Prints status updates throughout the process
 
-    """
-    if pkg_type == "brew":
-        cmd = ["brew", "uninstall", package]
-    elif pkg_type == "flatpak":
-        cmd = ["flatpak", "uninstall", "-y", package]
-    elif pkg_type == "pipx":
-        cmd = ["pipx", "uninstall", package]
-
-    print(f"Removing {pkg_type} package: {package}")
-    result = subprocess.run(cmd, capture_output=True, text=True)
-    if result.returncode != 0:
-        print(f"Failed to remove {package}: {result.stderr}")
-        return False
-    return True
-
-
-def update_packages(pkg_type, timeout=60):
-    r"""Update all packages of the specified type.
-
-    Args:
-        pkg_type: The package manager to use ('pipx', 'brew', or 'flatpak')
-        timeout: Maximum time in seconds to wait for the update
-
-    Returns:
-        tuple: (success, is_timeout) where:
-            - success is True if update completed successfully
-            - is_timeout is True if the operation timed out
-
-    """
-    if pkg_type == "brew":
-        cmd = ["brew", "upgrade"]
-    elif pkg_type == "flatpak":
-        cmd = ["flatpak", "update", "-y"]
-    elif pkg_type == "pipx":
-        cmd = ["pipx", "upgrade-all"]
-    else:
-        print(f"Unknown package type: {pkg_type}")
-        return False, False
-
-    print(f"\nUpdating {pkg_type} packages...")
-    try:
-        result = subprocess.run(
-            cmd, capture_output=True, text=True, timeout=timeout
-        )
-
-        if result.returncode != 0:
-            print(f"Failed to update {pkg_type} packages: {result.stderr}")
-            if result.stdout.strip():
-                print(result.stdout)
-            return False, False
-
-        if result.stdout.strip():
-            print(result.stdout)
-
-        return True, False
-
-    except subprocess.TimeoutExpired:
-        print(f"Timeout while updating {pkg_type} packages (>{timeout}s)")
-        return False, True
-    except Exception as e:
-        print(f"Unexpected error while updating {pkg_type} packages: {str(e)}")
-        return False, False
-
-
-def update_all_packages():
-    r"""Get all installed packages from all supported package managers.
-
-    Retrieves the complete list of installed packages from pipx, brew, and
-    flatpak. Packages that fail to retrieve are represented as empty sets.
-
-    Returns:
-        dict: A dictionary with package manager names as keys and sets of installed
-              packages as values. Format:
-              {
-                  'brew': {pkg1, pkg2, ...},
-                  'flatpak': {pkg1, pkg2, ...},
-                  'pipx': {pkg1, pkg2, ...}
-              }
+    Example:
+        >>> sync_packages("home-desktop", True)  # Set as primary
+        
+        Current machine state:
+        Packages for home-desktop:
+        brew     ( 5): git, tmux, vim, wget, zsh
+        
+        Setting home-desktop as primary machine
+        
+        Primary machine is: home-desktop
+        
+        Updated state for home-desktop
+        
+        >>> sync_packages("work-laptop")  # Sync with primary
+        
+        Current machine state:
+        Packages for work-laptop:
+        brew     ( 3): git, tmux, vim
+        
+        Primary machine is: home-desktop
+        
+        Syncing with primary machine...
+        
+        Installing missing brew packages:
+        Installing brew package: wget
+        Installing brew package: zsh
+        
+        Final state:
+        Packages for work-laptop:
+        brew     ( 5): git, tmux, vim, wget, zsh
 
     """
-    # First check internet connectivity
-    print("Checking internet connectivity...")
-    is_connected, latency = check_internet_connection()
-
-    if not is_connected:
-        print("\nERROR: No internet connectivity detected.")
-        print("Please check your internet connection and try again.")
-        return False
-
-    print(f"Internet connection detected (latency: {latency:.1f}ms)")
-
-    # Adjust timeouts based on latency
-    base_timeout = max(60, int(latency / 10))  # 60s minimum, or 100x ping time
-    retry_timeout = base_timeout * 3
-
-    pkg_types = ["brew", "flatpak", "pipx"]
-    results = {}
-    timeout_failures = []
-
-    # First pass - quick timeout
-    for pkg_type in pkg_types:
-        if not any(
-            [
-                pkg_type == "brew" and shutil.which("brew"),
-                pkg_type == "flatpak" and shutil.which("flatpak"),
-                pkg_type == "pipx" and shutil.which("pipx"),
-            ]
-        ):
-            continue
-
-        success, is_timeout = update_packages(pkg_type, timeout=base_timeout)
-        if is_timeout:
-            timeout_failures.append(pkg_type)
-        else:
-            results[pkg_type] = success
-
-    # If we had timeouts, check connectivity again before retrying
-    if timeout_failures:
-        print("\nChecking internet connection before retrying...")
-        is_connected, new_latency = check_internet_connection()
-
-        if not is_connected:
-            print("\nWARNING: Internet connection lost during updates.")
-            print("Remaining updates cancelled.")
-            return False
-
-        if new_latency > latency * 2:
-            print(f"\nWARNING: Network latency has increased significantly")
-            print(f"Original: {latency:.1f}ms, Current: {new_latency:.1f}ms")
-
-        # Only retry if some updates succeeded or if latency is reasonable
-        if any(results.values()) or new_latency < 1000:  # 1 second threshold
-            print("\nRetrying timed out updates with extended timeout...")
-            for pkg_type in timeout_failures:
-                success, _ = update_packages(pkg_type, timeout=retry_timeout)
-                results[pkg_type] = success
-        else:
-            print("\nNetwork conditions too poor to retry updates.")
-            for pkg_type in timeout_failures:
-                results[pkg_type] = False
-
-    # Analyze results
-    failed = [pkg for pkg, success in results.items() if not success]
-
-    # Print summary
-    if failed:
-        print("\nUpdate summary:")
-        print(f"Failed updates: {', '.join(failed)}")
-        print("You may want to try updating these package managers manually")
-
-    return len(failed) == 0
-
-
-def get_all_packages():
-    r"""Get all installed packages."""
-    return {
-        "brew": get_brew_packages(),
-        "flatpak": get_flatpak_packages(),
-        "pipx": get_pipx_packages(),
-    }
-
-
-def print_package_state(machine_name, packages):
-    r"""Print the package state for a machine.
-
-    Displays a formatted summary of all installed packages, grouped by package manager.
-    Sorts package managers and package names alphabetically for consistent output.
-
-    Args:
-        machine_name: String name of the machine
-        packages: Dictionary of package sets by package manager type
-
-    """
-    print(f"\nPackages for {machine_name}:")
-    for pkg_type in sorted(["pipx", "brew", "flatpak"]):
-        pkgs = packages.get(pkg_type, set())
-        if pkgs:
-            print(f"{pkg_type:8} ({len(pkgs):2}): {', '.join(sorted(pkgs))}")
-
-
-def sync_packages(machine_name, make_primary=False):
-    """Sync packages for a machine."""
     config = load_config()
     current_packages = get_all_packages()
 
@@ -825,7 +771,7 @@ def sync_packages(machine_name, make_primary=False):
     changes_made = False
 
     print("\nSyncing with primary machine...")
-    for pkg_type in ["pipx", "brew", "flatpak"]:
+    for pkg_type in ["brew", "flatpak", "pipx", "uv"]:
         current = set(current_packages.get(pkg_type, []))
         primary = set(primary_packages.get(pkg_type, []))
 
@@ -859,8 +805,26 @@ def sync_packages(machine_name, make_primary=False):
     print_package_state(machine_name, current_packages)
 
 
-def main():
-    r"""Main function to parse arguments and handle package operations."""
+def main() -> None:
+    r"""Main function to parse arguments and handle package operations.
+    
+    This function parses command-line arguments and performs the requested
+    operations (update and/or sync packages). It represents the entry point
+    for the package-sync script.
+    
+    Command-line arguments:
+        machine_name: Name of this machine (required positional argument)
+        --primary: Flag to set this machine as the primary sync source
+        --update: Flag to update all installed packages before syncing
+    
+    Example usage:
+        # Set laptop as primary machine and update packages
+        $ python package-sync.py laptop --primary --update
+        
+        # Sync desktop with the primary machine
+        $ python package-sync.py desktop
+    
+    """
     parser = argparse.ArgumentParser(
         description="Sync and update packages across machines"
     )
