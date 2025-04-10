@@ -68,6 +68,7 @@ packages = [
     "io.github.ungoogled_software.ungoogled_chromium",
     "io.github.voxelcubes.hand-tex",
     "io.gitlab.librewolf-community",
+    "org.cryptomator.Cryptomator",
     "org.gimp.GIMP",
     "org.jabref.jabref",
     "org.kde.falkon",
